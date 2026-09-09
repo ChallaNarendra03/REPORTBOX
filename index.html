@@ -255,6 +255,18 @@ select.cell-input{appearance:auto;}
 .history-check{width:17px;height:17px;accent-color:var(--loss);cursor:pointer;}
 .history-select-cell{display:flex;align-items:center;justify-content:center;width:24px;}
 .history-select-note{font-size:11px;color:var(--muted-2);margin-top:8px;}
+.login-history-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px;flex-wrap:wrap}
+.login-history-actions .btn{font-weight:900;text-transform:uppercase;letter-spacing:.35px;min-height:34px;padding:0 13px;white-space:nowrap}
+.audit-log-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px;flex-wrap:wrap}
+.audit-log-actions .btn{font-weight:900;text-transform:uppercase;letter-spacing:.35px;min-height:34px;padding:0 13px;white-space:nowrap}
+.audit-delete-btn{font-weight:900!important;text-transform:uppercase;letter-spacing:.3px;min-height:30px;padding:0 10px}
+.audit-history-item{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.audit-history-item .audit-main{flex:1;min-width:220px}
+.audit-history-item .audit-when{margin-left:auto}
+@media (max-width:700px){
+  .login-history-actions,.audit-log-actions{justify-content:flex-start}
+  .audit-history-item .audit-when{margin-left:0;width:100%}
+}
  
 .chart-legend{display:flex; gap:18px; margin-bottom:18px; flex-wrap:wrap;}
 .legend-item{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);}
@@ -1032,11 +1044,11 @@ function renderHistory(){
   }).join("") : '<div class="empty-note">No sign-ins recorded yet.</div>';
 
   var controls = isOwner() ? (
-    '<div class="history-controls">' +
+    '<div class="login-history-actions">' +
       '<button class="btn danger small" id="clearLoginHistory">CLEAR HISTORY</button>' +
       '<button class="btn danger small" id="customDeleteHistory">CUSTOM DELETE</button>' +
     '</div>' +
-    '<div class="history-select-note">CUSTOM DELETE removes only the selected login entries.</div>'
+    '<div class="history-select-note">Select entries with the checkboxes, then use CUSTOM DELETE.</div>'
   ) : '';
 
   return '' +
@@ -1049,16 +1061,25 @@ function renderHistory(){
 /* ============ AUDIT LOG (feature) ============ */
 function renderAuditLog(){
   var items = Array.isArray(state.data.auditLog) ? state.data.auditLog : [];
-  var rows = items.length ? items.map(function(h){
-    return '<div class="history-item">' +
-      '<div class="who"><div class="avatar">' + esc(h.user.slice(0,2).toUpperCase()) + '</div><span>' + esc(h.user) + '</span> <span class="action-pill">' + esc(h.action) + '</span></div>' +
-      '<span class="when">' + esc(h.display) + '</span>' +
+  var rows = items.length ? items.map(function(h, idx){
+    return '<div class="history-item audit-history-item">' +
+      '<div class="audit-main"><div class="who"><div class="avatar">' + esc((h.user||"").slice(0,2).toUpperCase()) + '</div><span>' + esc(h.user||"") + '</span> <span class="action-pill">' + esc(h.action||"") + '</span></div>' +
       (h.detail ? '<div class="detail">' + esc(h.detail) + '</div>' : '') +
+      '</div>' +
+      '<span class="when audit-when">' + esc(h.display||"") + '</span>' +
+      (isOwner() ? '<button class="btn danger small audit-delete-btn" data-action="delete-audit-entry" data-idx="'+idx+'" type="button">DELETE</button>' : '') +
     '</div>';
   }).join("") : '<div class="empty-note">No activity recorded yet. Actions like adding vehicles, saving reports, and permission changes will appear here.</div>';
+
+  var controls = isOwner() ? (
+    '<div class="audit-log-actions">' +
+      '<button class="btn danger small" id="clearAuditHistory" type="button">CLEAR HISTORY</button>' +
+    '</div>'
+  ) : '';
+
   return '' +
   '<div class="crumb">HOME / LOGS / DASHBOARD / AUDIT LOG</div>' +
-  '<div class="section-head"><div><h2>Audit Log</h2><div class="sub">' + items.length + ' recorded action' + (items.length===1?'':'s') + ' | full history of who changed what</div></div></div>' +
+  '<div class="section-head"><div><h2>Audit Log</h2><div class="sub">' + items.length + ' recorded action' + (items.length===1?'':'s') + ' | full history of who changed what</div>' + controls + '</div></div>' +
   '<div class="history-list">' + rows + '</div>' +
   '<div class="actions-row"><button class="btn ghost" data-nav="dashboard">Back</button><button class="btn ghost" data-nav-home="1">Home</button></div>';
 }
@@ -1183,6 +1204,7 @@ function bindView(){
   if(state.view === "vehicles") bindVehicles();
   if(state.view === "reports") bindReports();
   if(state.view === "history") bindHistory();
+  if(state.view === "auditlog") bindAuditLogActions();
   if(state.view === "summary-menu") bindSummaryMenu();
   if(state.view === "summary-result") bindSummaryResult();
   if(state.view === "settings") bindSettings();
@@ -1319,6 +1341,37 @@ function bindReports(){
   if(pdf) pdf.addEventListener("click", exportReportsPDF);
 }
  
+function bindAuditLogActions(){
+  if(!isOwner()) return;
+
+  document.querySelectorAll("[data-action='delete-audit-entry']").forEach(function(btn){
+    btn.addEventListener("click", async function(){
+      var idx = parseInt(btn.getAttribute("data-idx"), 10);
+      if(!Number.isInteger(idx) || idx < 0 || idx >= state.data.auditLog.length) return;
+      if(!confirm("Delete this Audit Log entry?")) return;
+
+      state.data.auditLog.splice(idx, 1);
+      await saveData();
+      showToast("Audit Log entry deleted", "ok");
+      render();
+    });
+  });
+
+  var clearBtn = document.getElementById("clearAuditHistory");
+  if(clearBtn) clearBtn.addEventListener("click", async function(){
+    if(!state.data.auditLog.length){
+      showToast("Audit Log is already empty", "err");
+      return;
+    }
+    if(!confirm("Clear ALL Audit Log history? This cannot be undone.")) return;
+
+    state.data.auditLog = [];
+    await saveData();
+    showToast("Audit Log history cleared", "ok");
+    render();
+  });
+}
+
 function bindHistory(){
   if(!isOwner()) return;
 
